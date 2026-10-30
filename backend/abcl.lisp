@@ -98,6 +98,7 @@
 (defvar $@register/2 (jmethod $*SelectableChannel "register" $*Selector $*int))
 (defvar $@select/0 (jmethod $*Selector "select"))
 (defvar $@select/1 (jmethod $*Selector "select" $*long))
+(defvar $@selectNow/0 (jmethod $*Selector "selectNow"))
 (defvar $@selectedKeys/0 (jmethod $*Selector "selectedKeys"))
 (defvar $@send/1 (jmethod $*DatagramSocket "send" $*DatagramPacket))
 (defvar $@setReuseAddress/1 (jmethod $*ServerSocket "setReuseAddress" $*boolean))
@@ -407,9 +408,15 @@
 	   (dolist (channel channels)
 	     (jcall $@configureBlocking/1 channel java:+false+)
 	     (jcall $@register/2 channel selector (logand ops (jcall $@validOps/0 channel))))
-	   (let ((ready-count (if timeout
-				  (jcall $@select/1 selector (truncate (* timeout 1000)))
-				  (jcall $@select/0 selector))))
+	   ;; Selector.select(0) waits for ever, so a TIMEOUT of 0 -- the
+	   ;; poll READ-CHAR-NO-HANG and LISTEN make -- is selectNow, and
+	   ;; any other timeout waits at least the millisecond select counts.
+	   (let ((ready-count (cond ((null timeout)
+				     (jcall $@select/0 selector))
+				    ((zerop timeout)
+				     (jcall $@selectNow/0 selector))
+				    (t
+				     (jcall $@select/1 selector (max 1 (ceiling (* timeout 1000))))))))
 	     (when (plusp ready-count)
 	       (let* ((keys (jcall $@selectedKeys/0 selector))
 		      (iterator (jcall $@iterator/0 keys))
